@@ -1,0 +1,446 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optimized Voronoi with Weights</title>
+  <style>
+    body { display: flex; justify-content: center; align-items: center; font-family: Arial, sans-serif; margin: 0; height: 100vh; overflow: hidden; }
+    .container { display: flex; flex-direction: column; align-items: center; }
+    .button-list { display: flex; overflow-y: auto; max-height: 150px; width: 600px; border-bottom: 1px solid #ccc; padding: 10px; box-sizing: border-box; text-align: center; }
+    .button-list button { margin: 10px; padding: 10px; cursor: pointer; font-size: 14px; }
+    .content-row { display: flex; align-items: flex-start; margin-top: 20px; }
+    .weight-settings { display: flex; flex-direction: column; border: 1px solid #ccc; padding: 10px; border-radius: 5px; margin-left: 20px; width: 300px; }
+    .weight-control { margin: 5px 0; }
+    .weight-control label { display: block; font-weight: bold; }
+    .weight-control input[type="range"] { width: 100%; }
+    .weight-control output { font-weight: bold; margin-left: 5px; }
+    .canvas-container { display: flex; justify-content: center; align-items: center; position: relative; }
+    canvas { border: 1px solid black; }
+  </style>
+  <script src="https://d3js.org/d3-delaunay.v6.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>SOC 최적입지 선정</h1>
+
+    <div class="button-list" id="buttonList"></div>
+    <button onclick="addOptimizedPoint()">Add Optimized Point</button>
+    <div class="content-row">
+      <div class="canvas-container">
+        <canvas id="simulationCanvas" width="600" height="600"></canvas>
+      </div>
+      <div class="weight-settings" id="weightSettings">
+        <h3>Parameter Weight Settings</h3>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("simulationCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let fixedPoints = [[100, 100], [200, 150], [300, 400], [400, 200], [500, 300]];
+    let points = [...fixedPoints];
+    const colors = ["red", "blue", "green", "orange", "purple", "cyan", "yellow", "pink", "brown", "gray"];
+
+    const socData = {
+      "인구 및 사회적 특성 데이터": ["인구 분포", "소득 수준", "거주 형태", '유동인구', '인구'],
+      "지리 정보": ["지형 데이터", "기후 데이터", "도시 경계 및 행정구역 정보"],
+      "교통 및 네트워크 데이터": ["도로망 데이터", "대중교통 데이터", "교통 혼잡도"],
+      "SOC 관련 데이터": ["SOC 시설 위치 및 종류", "SOC 이용 현황"],
+    };
+
+    const weights = {}; // 각 필요 데이터에 대한 가중치 저장
+
+    const buttonList = document.getElementById("buttonList");
+    Object.keys(socData).forEach(type => {
+      const button = document.createElement("button");
+      button.innerText = type;
+      button.onclick = () => showWeightControls(type);
+      buttonList.appendChild(button);
+    });
+
+    function showWeightControls(dataType) {
+      const weightSettings = document.getElementById("weightSettings");
+      weightSettings.innerHTML = `<h3>${dataType} 가중치 설정</h3>`;
+
+      socData[dataType].forEach(data => {
+        const weightControl = document.createElement("div");
+        weightControl.className = "weight-control";
+        weightControl.style.display = "flex"; // Flex 컨테이너로 설정
+        weightControl.style.alignItems = "center"; // 수직 중앙 정렬
+
+        const label = document.createElement("label");
+        label.innerText = data;
+        label.style.minWidth = "120px"; // 라벨의 최소 너비 설정
+
+        const rangeInput = document.createElement("input");
+        rangeInput.type = "range";
+        rangeInput.min = 0;
+        rangeInput.max = 100;
+        rangeInput.value = weights[data] || 50;
+        rangeInput.style.flexGrow = "1"; // 슬라이더가 남은 공간을 차지하도록 설정
+        rangeInput.style.margin = "0 10px"; // 슬라이더 양옆 여백 설정
+        rangeInput.oninput = () => updateOutput(output, rangeInput.value, data);
+
+        const output = document.createElement("output");
+        output.innerText = rangeInput.value;
+
+        weightControl.appendChild(label);
+        weightControl.appendChild(rangeInput);
+        weightControl.appendChild(output);
+        
+        weightSettings.appendChild(weightControl);
+      });
+    }
+
+    function updateOutput(outputElement, value, dataKey) {
+      outputElement.innerText = value;
+      weights[dataKey] = Number(value);
+    }
+
+    function setup() {
+      drawVoronoi();
+    }
+
+    function drawVoronoi() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const delaunay = d3.Delaunay.from(points);
+      const voronoi = delaunay.voronoi([0, 0, canvas.width, canvas.height]);
+
+      for (let i = 0; i < points.length; i++) {
+        const cell = voronoi.cellPolygon(i);
+        if (cell) {
+          ctx.beginPath();
+          ctx.moveTo(cell[0][0], cell[0][1]);
+          cell.forEach(([x, y]) => ctx.lineTo(x, y));
+          ctx.closePath();
+          ctx.fillStyle = colors[i % colors.length];
+          ctx.fill();
+        }
+      }
+
+      points.forEach((point, i) => {
+        ctx.beginPath();
+        ctx.arc(point[0], point[1], 5, 0, Math.PI * 2);
+        ctx.fillStyle = i < fixedPoints.length ? "black" : "gray";
+        ctx.fill();
+      });
+    }
+
+    function addOptimizedPoint() {
+      const delaunay = d3.Delaunay.from(points);
+      const voronoi = delaunay.voronoi([0, 0, canvas.width, canvas.height]);
+      let areas = [];
+
+      for (let i = 0; i < points.length; i++) {
+        const cell = voronoi.cellPolygon(i);
+        if (cell) {
+          areas.push(calculatePolygonArea(cell));
+        }
+      }
+      const targetArea = areas.reduce((sum, area) => sum + area, 0) / areas.length;
+      let bestPoint = null;
+      let bestStdDev = Infinity;
+
+      for (let trial = 0; trial < 100; trial++) {
+        const candidate = [Math.random() * canvas.width, Math.random() * canvas.height];
+        const testPoints = [...points, candidate];
+        const testDelaunay = d3.Delaunay.from(testPoints);
+        const testVoronoi = testDelaunay.voronoi([0, 0, canvas.width, canvas.height]);
+
+        let testAreas = [];
+        for (let i = 0; i < testPoints.length; i++) {
+          const cell = testVoronoi.cellPolygon(i);
+          if (cell) {
+            testAreas.push(calculatePolygonArea(cell));
+          }
+        }
+
+        const meanArea = testAreas.reduce((sum, area) => sum + area, 0) / testAreas.length;
+        const stdDev = Math.sqrt(testAreas.reduce((sum, area) => sum + Math.pow(area - meanArea, 2), 0) / testAreas.length);
+
+        if (stdDev < bestStdDev) {
+          bestStdDev = stdDev;
+          bestPoint = candidate;
+        }
+      }
+
+      if (bestPoint) {
+        points.push(bestPoint);
+        drawVoronoi();
+      }
+    }
+
+    function calculatePolygonArea(polygon) {
+      let area = 0;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const [x1, y1] = polygon[i];
+        const [x2, y2] = polygon[j];
+        area += (x1 * y2 - x2 * y1);
+      }
+      return Math.abs(area / 2);
+    }
+
+    setup();
+  </script>
+</body>
+</html> -->
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Optimized Voronoi with Weights</title>
+  <style>
+    /* 스타일 정의 */
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .button-list {
+      display: flex;
+      overflow-y: auto;
+      max-height: 150px;
+      width: 600px;
+      border-bottom: 1px solid #ccc;
+      padding: 10px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .button-list button {
+      margin: 10px;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .content-row {
+      display: flex;
+      align-items: flex-start;
+      margin-top: 20px;
+    }
+    .weight-settings {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #ccc;
+      padding: 10px;
+      border-radius: 5px;
+      margin-left: 20px;
+      width: 300px;
+    }
+    .weight-control {
+      margin: 5px 0;
+      display: flex;
+      align-items: center;
+    }
+    .weight-control label {
+      min-width: 120px;
+      font-weight: bold;
+    }
+    .weight-control input[type="range"] {
+      flex-grow: 1;
+      margin: 0 10px;
+    }
+    .weight-control output {
+      font-weight: bold;
+      margin-left: 5px;
+    }
+    .canvas-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    canvas {
+      border: 1px solid black;
+    }
+  </style>
+  <script src="https://d3js.org/d3-delaunay.v6.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>SOC 최적입지 선정</h1>
+
+    <!-- 데이터 유형 버튼 목록 -->
+    <div class="button-list" id="buttonList"></div>
+    <button onclick="addOptimizedPoint()">Add Optimized Point</button>
+
+    <!-- 가중치 설정과 캔버스를 표시할 영역 -->
+    <div class="content-row">
+      <div class="canvas-container">
+        <canvas id="simulationCanvas" width="600" height="600"></canvas>
+      </div>
+      <div class="weight-settings" id="weightSettings">
+        <h3>Parameter Weight Settings</h3>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 캔버스 설정 및 기본 데이터 정의
+    const canvas = document.getElementById("simulationCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let fixedPoints = [[100, 100], [200, 150], [300, 400], [400, 200], [500, 300]];
+    let points = [...fixedPoints];
+    const colors = ["red", "blue", "green", "orange", "purple", "cyan", "yellow", "pink", "brown", "gray"];
+
+    const socData = {
+      "인구 및 사회적 특성 데이터": ["인구 분포", "소득 수준", "거주 형태", "유동인구", "인구"],
+      "지리 정보": ["지형 데이터", "기후 데이터", "도시 경계 및 행정구역 정보"],
+      "교통 및 네트워크 데이터": ["도로망 데이터", "대중교통 데이터", "교통 혼잡도"],
+      "SOC 관련 데이터": ["SOC 시설 위치 및 종류", "SOC 이용 현황"],
+    };
+
+    const weights = {}; // 각 필요 데이터에 대한 가중치 저장
+
+    // 버튼 생성 및 이벤트 설정
+    const buttonList = document.getElementById("buttonList");
+    Object.keys(socData).forEach(type => {
+      const button = document.createElement("button");
+      button.innerText = type;
+      button.onclick = () => showWeightControls(type);
+      buttonList.appendChild(button);
+    });
+
+    // 가중치 설정 UI 생성 함수
+    function showWeightControls(dataType) {
+      const weightSettings = document.getElementById("weightSettings");
+      weightSettings.innerHTML = `<h3>${dataType} 가중치 설정</h3>`;
+
+      socData[dataType].forEach(data => {
+        const weightControl = document.createElement("div");
+        weightControl.className = "weight-control";
+
+        const label = document.createElement("label");
+        label.innerText = data;
+
+        const rangeInput = document.createElement("input");
+        rangeInput.type = "range";
+        rangeInput.min = 0;
+        rangeInput.max = 100;
+        rangeInput.value = weights[data] || 50;
+        rangeInput.oninput = () => updateOutput(output, rangeInput.value, data);
+
+        const output = document.createElement("output");
+        output.innerText = rangeInput.value;
+
+        weightControl.appendChild(label);
+        weightControl.appendChild(rangeInput);
+        weightControl.appendChild(output);
+
+        weightSettings.appendChild(weightControl);
+      });
+    }
+
+    // 슬라이더의 출력 값 업데이트
+    function updateOutput(outputElement, value, dataKey) {
+      outputElement.innerText = value;
+      weights[dataKey] = Number(value);
+    }
+
+    // 초기화 및 Voronoi 다이어그램 생성
+    function setup() {
+      drawVoronoi();
+    }
+
+    function drawVoronoi() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const delaunay = d3.Delaunay.from(points);
+      const voronoi = delaunay.voronoi([0, 0, canvas.width, canvas.height]);
+
+      for (let i = 0; i < points.length; i++) {
+        const cell = voronoi.cellPolygon(i);
+        if (cell) {
+          ctx.beginPath();
+          ctx.moveTo(cell[0][0], cell[0][1]);
+          cell.forEach(([x, y]) => ctx.lineTo(x, y));
+          ctx.closePath();
+          ctx.fillStyle = colors[i % colors.length];
+          ctx.fill();
+        }
+      }
+
+      points.forEach((point, i) => {
+        ctx.beginPath();
+        ctx.arc(point[0], point[1], 5, 0, Math.PI * 2);
+        ctx.fillStyle = i < fixedPoints.length ? "black" : "gray";
+        ctx.fill();
+      });
+    }
+
+    // 최적화된 점 추가
+    function addOptimizedPoint() {
+      const delaunay = d3.Delaunay.from(points);
+      const voronoi = delaunay.voronoi([0, 0, canvas.width, canvas.height]);
+      let areas = [];
+
+      for (let i = 0; i < points.length; i++) {
+        const cell = voronoi.cellPolygon(i);
+        if (cell) {
+          areas.push(calculatePolygonArea(cell));
+        }
+      }
+      const targetArea = areas.reduce((sum, area) => sum + area, 0) / areas.length;
+      let bestPoint = null;
+      let bestStdDev = Infinity;
+
+      for (let trial = 0; trial < 100; trial++) {
+        const candidate = [Math.random() * canvas.width, Math.random() * canvas.height];
+        const testPoints = [...points, candidate];
+        const testDelaunay = d3.Delaunay.from(testPoints);
+        const testVoronoi = testDelaunay.voronoi([0, 0, canvas.width, canvas.height]);
+
+        let testAreas = [];
+        for (let i = 0; i < testPoints.length; i++) {
+          const cell = testVoronoi.cellPolygon(i);
+          if (cell) {
+            testAreas.push(calculatePolygonArea(cell));
+          }
+        }
+
+        const meanArea = testAreas.reduce((sum, area) => sum + area, 0) / testAreas.length;
+        const stdDev = Math.sqrt(testAreas.reduce((sum, area) => sum + Math.pow(area - meanArea, 2), 0) / testAreas.length);
+
+        if (stdDev < bestStdDev) {
+          bestStdDev = stdDev;
+          bestPoint = candidate;
+        }
+      }
+
+      if (bestPoint) {
+        points.push(bestPoint);
+        drawVoronoi();
+      }
+    }
+
+    // 다각형의 면적 계산
+    function calculatePolygonArea(polygon) {
+      let area = 0;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const [x1, y1] = polygon[i];
+        const [x2, y2] = polygon[j];
+        area += (x1 * y2 - x2 * y1);
+      }
+      return Math.abs(area / 2);
+    }
+
+    setup();
+  </script>
+</body>
+</html>
